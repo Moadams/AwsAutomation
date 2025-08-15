@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: |
   This CloudFormation template creates IAM users and groups with specific S3 and EC2
-  read-only permissions, and stores their auto-generated passwords in Secrets Manager.
+  read-only permissions, using a static password for initial login.
 
 Parameters:
   IAMUserNamePrefix:
@@ -9,22 +9,14 @@ Parameters:
     Description: A prefix for the IAM user names.
     Default: mylab
 
-Resources:
-  UserPasswordSecret:
-    Type: AWS::SecretsManager::Secret
-    Properties:
-      Description: Auto-generated password for IAM users
-      GenerateSecretString:
-        PasswordLength: 16
-        ExcludeCharacters: '"\'@/'
-        IncludeSpace: false
-        RequireEachIncludedType: true
-      Tags:
-        - Key: Environment
-          Value: Lab
-        - Key: ManagedBy
-          Value: CloudFormation
+  StaticPassword:
+    Type: String
+    NoEcho: true
+    MinLength: 8
+    Description: Static password for the IAM users
 
+Resources:
+  # Groups
   S3ReadOnlyGroup:
     Type: AWS::IAM::Group
     Properties:
@@ -39,6 +31,7 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess
 
+  # IAM Users
   S3User:
     Type: AWS::IAM::User
     Properties:
@@ -46,7 +39,7 @@ Resources:
       Groups:
         - !Ref S3ReadOnlyGroup
       LoginProfile:
-        Password: !GetAtt UserPasswordSecret.SecretString
+        Password: !Ref StaticPassword
         PasswordResetRequired: true
       Tags:
         - Key: Purpose
@@ -54,16 +47,15 @@ Resources:
         - Key: ManagedBy
           Value: CloudFormation
 
-
   EC2User:
     Type: AWS::IAM::User
     Properties:
       UserName: !Sub "${IAMUserNamePrefix}-ec2-user"
       Groups:
-        - !Ref EC2ReadOnlyGroup 
+        - !Ref EC2ReadOnlyGroup
       LoginProfile:
-        Password: !GetAtt UserPasswordSecret.SecretString
-        PasswordResetRequired: true 
+        Password: !Ref StaticPassword
+        PasswordResetRequired: true
       Tags:
         - Key: Purpose
           Value: EC2Access
@@ -81,6 +73,7 @@ Outputs:
         - '?userName='
         - !Ref S3User
         - '&forceCheck=true'
+
   EC2UserConsoleLoginURL:
     Description: Console login URL for the EC2 User
     Value: !Join
@@ -91,8 +84,3 @@ Outputs:
         - '?userName='
         - !Ref EC2User
         - '&forceCheck=true'
-  UserPasswordSecretARN:
-    Description: ARN of the Secrets Manager secret storing the initial password.
-                 Retrieve this value to get the temporary password for initial login.
-    Value: !Ref UserPasswordSecret
-
