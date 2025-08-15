@@ -1,22 +1,32 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: |
-  This CloudFormation template creates IAM users and groups with specific S3 and EC2
-  read-only permissions, using a static password for initial login.
+Description: >
+  Creates an OTP in Secrets Manager, S3 & EC2 read-only IAM groups,
+  and two IAM users (ec2-user, s3-user) with console access using the OTP.
+  Users must change password at first login.
 
 Parameters:
   IAMUserNamePrefix:
     Type: String
-    Description: A prefix for the IAM user names.
     Default: mylab
-
-  StaticPassword:
-    Type: String
-    NoEcho: true
-    MinLength: 8
-    Description: Static password for the IAM users
+    Description: Prefix for IAM usernames and groups (e.g., "mylab").
 
 Resources:
-  # Groups
+  UserPasswordSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: OTP for initial IAM console login (shared by all users in this stack)
+      GenerateSecretString:
+        SecretStringTemplate: '{"note":"OTP for IAM console users"}'
+        GenerateStringKey: 'password'
+        PasswordLength: 16
+        ExcludePunctuation: true
+        RequireEachIncludedType: true
+      Tags:
+        - Key: Environment
+          Value: Lab
+        - Key: ManagedBy
+          Value: CloudFormation
+
   S3ReadOnlyGroup:
     Type: AWS::IAM::Group
     Properties:
@@ -31,15 +41,13 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonEC2ReadOnlyAccess
 
-  # IAM Users
   S3User:
     Type: AWS::IAM::User
     Properties:
       UserName: !Sub "${IAMUserNamePrefix}-s3-user"
-      Groups:
-        - !Ref S3ReadOnlyGroup
+      Groups: [ !Ref S3ReadOnlyGroup ]
       LoginProfile:
-        Password: !Ref StaticPassword
+        Password: !Sub "{{resolve:secretsmanager:${UserPasswordSecret}:SecretString:password}}"
         PasswordResetRequired: true
       Tags:
         - Key: Purpose
@@ -51,10 +59,9 @@ Resources:
     Type: AWS::IAM::User
     Properties:
       UserName: !Sub "${IAMUserNamePrefix}-ec2-user"
-      Groups:
-        - !Ref EC2ReadOnlyGroup
+      Groups: [ !Ref EC2ReadOnlyGroup ]
       LoginProfile:
-        Password: !Ref StaticPassword
+        Password: !Sub "{{resolve:secretsmanager:${UserPasswordSecret}:SecretString:password}}"
         PasswordResetRequired: true
       Tags:
         - Key: Purpose
@@ -63,23 +70,25 @@ Resources:
           Value: CloudFormation
 
 Outputs:
+  OTPSecretArn:
+    Description: ARN of the Secrets Manager secret with the initial (shared) OTP
+    Value: !Ref UserPasswordSecret
   S3UserConsoleLoginURL:
-    Description: Console login URL for the S3 User
-    Value: !Join 
+    Description: Console login URL for the S3 user
+    Value: !Join
       - ''
       - - 'https://'
-        - !Ref "AWS::AccountId"
+        - !Ref AWS::AccountId
         - '.signin.aws.amazon.com/console'
         - '?userName='
         - !Ref S3User
         - '&forceCheck=true'
-
   EC2UserConsoleLoginURL:
-    Description: Console login URL for the EC2 User
+    Description: Console login URL for the EC2 user
     Value: !Join
       - ''
       - - 'https://'
-        - !Ref "AWS::AccountId"
+        - !Ref AWS::AccountId
         - '.signin.aws.amazon.com/console'
         - '?userName='
         - !Ref EC2User
