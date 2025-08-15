@@ -1,0 +1,5 @@
+template-file-path: iam-resources.yaml
+parameters:
+  StaticPassword: '****'
+  IAMUserNamePrefix: mylab
+tags: {}
